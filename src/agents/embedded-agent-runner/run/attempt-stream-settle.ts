@@ -12,6 +12,7 @@ import { resolveProviderTextTransforms } from "../../../plugins/provider-runtime
 import type { NestedToolActivity } from "../../../sessions/nested-tool-activity.js";
 import type { AgentRunAttemptFailureSource } from "../../agent-run-terminal-outcome.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
+import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
 import { wrapStreamFnTextTransforms } from "../../plugin-text-transforms.js";
 import { registerProviderStreamForModel } from "../../provider-stream.js";
 import type { AgentMessage } from "../../runtime/index.js";
@@ -514,6 +515,9 @@ export async function prepareEmbeddedAttemptTransport(input: {
               ? undefined
               : getAgentScopedMediaLocalRoots(attempt.config ?? {}, input.sessionAgentId),
             onCurrentTurnImageFailure: input.onCurrentTurnImageFailure,
+            // Provider replay resizes exactly like the prompt path; omitting this fell back
+            // to the built-in 1200px default and ignored agents.defaults.imageMaxDimensionPx.
+            maxDimensionPx: resolveImageSanitizationLimits(attempt.config).maxDimensionPx,
             sandbox:
               input.sandbox?.enabled && input.sandbox.fsBridge
                 ? { root: input.sandbox.workspaceDir, bridge: input.sandbox.fsBridge }

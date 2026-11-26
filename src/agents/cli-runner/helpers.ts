@@ -387,6 +387,7 @@ export async function prepareCliPromptImagePayload(params: {
   mediaImageLayout?: MediaImageLayout;
   media?: MediaFact[];
   imageTurnKey?: string;
+  maxDimensionPx?: number;
 }): Promise<{
   prompt: string;
   imagePaths?: string[];
@@ -409,6 +410,7 @@ export async function prepareCliPromptImagePayload(params: {
         imageOrder: params.imageOrder,
         mediaImageLayout: params.mediaImageLayout,
         maxBytes: MAX_IMAGE_BYTES,
+        maxDimensionPx: params.maxDimensionPx,
         localRoots: params.localRoots,
       })
     : undefined;

@@ -10,6 +10,7 @@ import { createSolidPngBuffer } from "../../test/helpers/image-fixtures.js";
 import { buildInboundMediaNoteProjection } from "../auto-reply/media-note.js";
 import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
+import { readImageMetadataFromHeader } from "../media/image-ops.js";
 import { getAgentScopedMediaLocalRoots } from "../media/local-roots.js";
 import { escapeRegExp } from "../shared/regexp.js";
 import { captureEnv, setTestEnvValue } from "../test-utils/env.js";
@@ -28,6 +29,35 @@ import * as promptImageUtils from "./embedded-agent-runner/run/images.js";
 import * as toolImages from "./tool-images.js";
 
 describe("prepareCliPromptImagePayload prompt references", () => {
+  it("resizes CLI prompt images to the configured dimension limit", async () => {
+    const workspaceDir = await fs.mkdtemp(
+      path.join(resolvePreferredOpenClawTmpDir(), "openclaw-cli-image-limits-"),
+    );
+    const imagePath = path.join(workspaceDir, "wide.png");
+    await fs.writeFile(imagePath, createSolidPngBuffer(80, 40, { r: 0, g: 0, b: 255 }));
+
+    try {
+      const resize = async (maxDimensionPx?: number) => {
+        const prepared = await prepareCliPromptImagePayload({
+          backend: { command: "claude", input: "stdin" },
+          prompt: "describe the attachment",
+          workspaceDir,
+          media: [{ path: imagePath, contentType: "image/png" }],
+          maxDimensionPx,
+        });
+        const metadata = readImageMetadataFromHeader(
+          await fs.readFile(expectDefined(prepared.imagePaths?.[0], "prepared image path")),
+        );
+        return { width: metadata?.width, height: metadata?.height };
+      };
+      // Without the configured limit the built-in 1200px default applied to this 80px source.
+      expect(await resize()).toEqual({ width: 80, height: 40 });
+      expect(await resize(40)).toEqual({ width: 40, height: 20 });
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   beforeEach(() => {
     // Restore spies because these helpers use real modules with per-test mocks.
     vi.restoreAllMocks();

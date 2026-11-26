@@ -694,6 +694,8 @@ export async function materializeProviderContext(params: {
   localRoots?: readonly string[];
   sandbox?: { root: string; bridge: SandboxFsBridge };
   onCurrentTurnImageFailure?: (count: number) => void;
+  /** Replay resizes with the attempt's configured limit, not the built-in default. */
+  maxDimensionPx?: number;
 }): Promise<ProviderContext> {
   const messages = await materializePromptMediaMessages(params.context.messages as AgentMessage[], {
     workspaceDir: params.workspaceDir,
@@ -701,6 +703,7 @@ export async function materializeProviderContext(params: {
     workspaceOnly: params.workspaceOnly,
     localRoots: params.localRoots,
     sandbox: params.sandbox,
+    maxDimensionPx: params.maxDimensionPx,
     provider: true,
     signal: params.signal,
     onCurrentTurnImageFailure: params.onCurrentTurnImageFailure,

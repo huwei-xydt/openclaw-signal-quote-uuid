@@ -21,6 +21,7 @@ import {
   hasHydratableMediaImages,
 } from "../embedded-agent-runner/run/images.js";
 import type { MediaImageLayout } from "../embedded-agent-runner/run/prompt-image-metadata.js";
+import { resolveImageSanitizationLimits } from "../image-sanitization.js";
 import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
 import { prepareCliBundleMcpCaptureAttempt } from "./bundle-mcp.js";
 import {
@@ -209,6 +210,7 @@ export async function executePreparedCliRun(
         imageOrder: params.imageOrder,
         mediaImageLayout: params.mediaImageLayout,
         media: params.media,
+        maxDimensionPx: resolveImageSanitizationLimits(params.config).maxDimensionPx,
         ...(imageTurnEntryId ? { imageTurnKey: hashCliImageTurnEntryId(imageTurnEntryId) } : {}),
       });
   prompt = imagePayload.prompt;
