@@ -4,6 +4,7 @@ import { resolveIntegerOption } from "openclaw/plugin-sdk/number-runtime";
 import { chunkByParagraph, type ChunkMode } from "openclaw/plugin-sdk/reply-chunking";
 import { chunkTextForOutbound, findCodeRegions } from "openclaw/plugin-sdk/text-chunking";
 import { createGraphemeChunkEndFinder } from "openclaw/plugin-sdk/text-grapheme";
+import { resolveTableContinuationHeaders } from "./chunk-tables.js";
 
 type ChunkDiscordTextOpts = {
   /** Max characters per Discord message. Default: 2000. */
@@ -63,6 +64,7 @@ function closesFence(open: OpenFence, close: OpenFence): boolean {
 }
 
 type DiscordFrame = { start: number; end: number };
+
 function chunkDiscordText(text: string, opts: ChunkDiscordTextOpts = {}): string[] {
   const hardMaxChars = resolveIntegerOption(opts.maxChars, DEFAULT_MAX_CHARS, { min: 1 });
   const maxLines = resolveIntegerOption(opts.maxLines, DEFAULT_MAX_LINES, { min: 1 });
@@ -77,6 +79,7 @@ function chunkDiscordText(text: string, opts: ChunkDiscordTextOpts = {}): string
       ? hardMaxChars - REASONING_ITALICS_MARKER_CHARS
       : hardMaxChars;
   const ranges = createDiscordRanges(text, maxChars, maxLines);
+  const tableHeaders = resolveTableContinuationHeaders(text, maxChars);
   const chunks: string[] = [];
   let current: DiscordFrame | undefined;
   let consumed = 0;
@@ -91,7 +94,11 @@ function chunkDiscordText(text: string, opts: ChunkDiscordTextOpts = {}): string
     if (body === undefined) {
       return undefined;
     }
-    const result = raw(frame, body);
+    // A cut inside a table leaves its rows without the header the renderer needs to
+    // parse them. Replay the header only when the chunk starts on a row, never when it
+    // already holds the header or the cut lands before the table.
+    const tableHeader = tableHeaders.get(frame.start) ?? "";
+    const result = tableHeader + raw(frame, body);
     const close = ranges.fenceAt(frame.end);
     return close?.reopenLine
       ? result + (result.endsWith("\n") ? "" : "\n") + close.closeLine
@@ -145,6 +152,17 @@ function chunkDiscordText(text: string, opts: ChunkDiscordTextOpts = {}): string
     const fence = candidateFence?.reopenLine ? candidateFence : null;
     const charLimit = maxChars - (fence ? fence.closeLine.length + 1 : 0);
     const lineLimit = Math.max(1, maxLines - (fence ? 1 : 0));
+    // Prefer a line boundary over filling the remaining budget. Without this the segment
+    // limit below cuts inside the line, which splits table rows and their header apart.
+    if (current) {
+      const wholeEnd = lineStart + line.length;
+      if (
+        !fits({ start: current.start, end: wholeEnd }) &&
+        fits({ start: lineStart, end: wholeEnd })
+      ) {
+        current = flush(current);
+      }
+    }
     const content = current ? raw(current) : (ranges.fenceAt(consumed)?.reopenLine ?? "");
     // An original closer consumes its reservation; splitting it first would turn markers into code.
     const segmentLimit =

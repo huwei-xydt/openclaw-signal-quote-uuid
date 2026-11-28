@@ -7,6 +7,16 @@ import { chunkDiscordTextWithMode } from "./chunk.js";
 type ChunkOptions = Parameters<typeof chunkDiscordTextWithMode>[1];
 const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
 
+/** A pipe table whose rows are wide enough that the header cannot stay with all of them. */
+function tableSource(rowCount: number): string {
+  const rows = Array.from(
+    { length: rowCount },
+    (_, index) =>
+      `| Day ${String(index + 1).padStart(2, "0")} | Session ${index + 1} | ${(5 + index / 10).toFixed(1)} km | ${140 + index} bpm |`,
+  );
+  return `| Day | Session | Distance | HR |\n|---|---|---|---|\n${rows.join("\n")}`;
+}
+
 function split(text: string, options: ChunkOptions = {}, cap = options.maxChars ?? 2000) {
   const chunks = chunkDiscordTextWithMode(text, { chunkMode: "length", ...options });
   for (const value of chunks) {
@@ -93,6 +103,47 @@ describe("chunkDiscordText", () => {
         .filter((chunk) => chunk.startsWith("```"))
         .every((chunk) => /^```(?:ts)?(?:\n|$)/.test(chunk)),
     ).toBe(true);
+  });
+
+  it("prefers a line boundary over filling the remaining budget", () => {
+    // Short lines that together overflow the cap must be cut between lines, never
+    // mid-line. Filling the budget first is what split table rows away from headers.
+    const intro = Array.from(
+      { length: 28 },
+      (_, index) =>
+        `Session ${index + 1} covered an easy recovery distance with a steady heart rate.`,
+    ).join("\n");
+    const source = `${intro}\n\n${tableSource(8)}`;
+    const chunks = split(source, { maxChars: 2000, maxLines: 200 });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    // Each chunk ends where a source line ends, so no row is cut in half.
+    for (const chunk of chunks.slice(0, -1)) {
+      const trimmed = chunk.replace(/\n$/u, "");
+      expect(source.includes(`${trimmed}\n`)).toBe(true);
+    }
+  });
+
+  it("replays a table header into a chunk that starts on a row", () => {
+    const source = tableSource(60);
+    const chunks = split(source, { maxChars: 2000, maxLines: 200 });
+    expect(chunks.length).toBeGreaterThan(1);
+
+    // Every chunk holding rows must also hold a header row and its delimiter row, so
+    // the channel renderer converts them instead of leaving raw pipes.
+    for (const chunk of chunks) {
+      const lines = chunk.split("\n");
+      const headerAt = lines.findIndex((line) => /^\|\s*Day\s*\|/u.test(line));
+      if (!lines.some((line) => /^\| Day \d/u.test(line))) {
+        continue;
+      }
+      expect(headerAt).toBe(0);
+      expect(lines[1]).toMatch(/^\|[\s:|-]+\|?\s*$/u);
+    }
+
+    // The header is replayed, but no row is lost or duplicated.
+    const rowsOf = (text: string) => text.split("\n").filter((line) => /^\| Day \d/u.test(line));
+    expect(chunks.flatMap(rowsOf)).toEqual(rowsOf(source));
   });
 
   it.each([
